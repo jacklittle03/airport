@@ -43,20 +43,20 @@ namespace Airport.Cli
 
             // --- Prompts ---
             Console.Write("Enter your name: ");
-            var name = Console.ReadLine() ?? string.Empty;
+            var name = (Console.ReadLine() ?? string.Empty).Trim();
 
             Console.Write("Enter your age: ");
             var ageText = Console.ReadLine() ?? "";
             _ = int.TryParse(ageText, out var age);
 
             Console.Write("Enter your email: ");
-            var email = Console.ReadLine() ?? string.Empty;
+            var email = (Console.ReadLine() ?? string.Empty).Trim();
 
             Console.Write("Enter your mobile: ");
-            var mobile = Console.ReadLine() ?? string.Empty;
+            var mobile = (Console.ReadLine() ?? string.Empty).Trim();
 
             Console.Write("Enter your password: ");
-            var password = Console.ReadLine() ?? string.Empty;
+            var password = (Console.ReadLine() ?? string.Empty).Trim();
 
             // --- Validation (fast-fail with clear messages) ---
             if (!Validation.IsValidName(name))

@@ -17,23 +17,23 @@ public class RegisterUserUseCase
 
     public async Task<RegisterUserResponse?> HandleAsync(RegisterUserRequest request)
     {
-        // Ensure email is unique
+        // Normalize
+        var normalizedEmail = (request.Email ?? string.Empty).Trim().ToLowerInvariant();
+
         var existing = await _userRepo.ListAsync();
-        if (existing.Any(u => u.Email.Equals(request.Email, StringComparison.OrdinalIgnoreCase)))
-        {
-            return null; // email already registered
-        }
+        if (existing.Any(u => (u.Email ?? string.Empty).Trim().ToLowerInvariant() == normalizedEmail))
+            return null;
 
         var traveller = new Traveller(
-            request.Name,
+            request.Name?.Trim() ?? string.Empty,
             request.Age,
-            request.Email,
-            request.Mobile,
-            request.Password
+            normalizedEmail,
+            request.Mobile?.Trim() ?? string.Empty,
+            request.Password // (hash later)
         );
 
         await _userRepo.AddAsync(traveller);
-
         return new RegisterUserResponse(traveller.Id, traveller.Email);
     }
+
 }
