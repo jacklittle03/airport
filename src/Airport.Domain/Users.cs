@@ -25,6 +25,11 @@ public abstract class User
         Mobile = mobile;
         PasswordHash = passwordHash;
     }
+    public void UpdatePassword(string newPassword)
+    {
+        PasswordHash = newPassword;
+    }
+    
 }
 
 /// A standard traveller.
@@ -34,6 +39,7 @@ public class Traveller : User
 
     public Traveller(string name, int age, string email, string mobile, string passwordHash)
         : base(name, age, email, mobile, passwordHash) { }
+
 }
 
 
@@ -69,3 +75,4 @@ public class FlightManager : User
         StaffId = staffId;
     }
 }
+
