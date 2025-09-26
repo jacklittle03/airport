@@ -140,6 +140,7 @@ namespace Airport.Cli
             }
         }
 
+        // Standard show my details for every user
         private static void ShowMyDetails(Guid userId)
         {
             var user = UserRepo.GetByIdAsync(userId).Result;
@@ -151,13 +152,28 @@ namespace Airport.Cli
             }
 
             Console.WriteLine();
+            Console.WriteLine("Your details.");
             Console.WriteLine($"Name  : {user.Name}");
             Console.WriteLine($"Age   : {user.Age}");
+            Console.WriteLine($"Mobile phone number: {user.Mobile}");
             Console.WriteLine($"Email : {user.Email}");
-            Console.WriteLine($"Mobile: {user.Mobile}");
+            
+            // User type specific details
+            switch (user)
+            {
+             /*   case FrequentFlyer ff:
+                    Console.WriteLine($"Frequent Flyer Number: {ff.FrequentFlyerNumber}");
+                    Console.WriteLine($"Frequent Flyer Points: {ff.FrequentFlyerPoints}");
+                    break; */
+                case FlightManager fm:
+                    Console.WriteLine($"Staff ID: {fm.StaffId}");
+                    break;
+            }
+
             Pause();
         }
-
+        
+        // Change Password
         private static void ChangePassword(Guid userId)
         {
             var user = UserRepo.GetByIdAsync(userId).Result;
@@ -283,7 +299,7 @@ namespace Airport.Cli
             Console.WriteLine("Feature not yet available.");
             // Similar to above but for departures.
         }
-        
+
         // Create new arrival flight
         private static void RegisterArrivalFlightCli()
         {
@@ -374,11 +390,51 @@ namespace Airport.Cli
                 return;
             }
 
+            // Split & sort each group chronologically
+            var arrivals = flights
+                .Where(f => f.Direction == FlightDirection.Arrival)
+                .OrderBy(f => f.ScheduledUtc)
+                .ToList();
+
+            var departures = flights
+                .Where(f => f.Direction == FlightDirection.Departure)
+                .OrderBy(f => f.ScheduledUtc)
+                .ToList();
+
+            // --- Arrival flights block ---
             Console.WriteLine();
-            foreach (var f in flights)
+            Console.WriteLine("Arrival Flights:");
+            if (arrivals.Count == 0)
             {
-                var dir = f.Direction == FlightDirection.Arrival ? "ARR" : "DEP";
-                Console.WriteLine($"{f.ScheduledUtc:yyyy-MM-dd HH:mm} UTC  [{dir}]  {f.AirlineCode} {f.FlightCode}  Plane:{f.PlaneId}  City:{f.City}  Status:{f.Status}");
+                Console.WriteLine("(none)");
+            }
+            else
+            {
+                foreach (var f in arrivals)
+                {
+                    // Example: Flight JST150 operated by Jetstar arriving at 09:00 01/04/2025 from Sydney on plane JST6A.
+                    var airlineName = GetAirlineNameFromCode(f.AirlineCode);
+                    Console.WriteLine(
+                        $"Flight {f.FlightCode} operated by {airlineName} arriving at {f.ScheduledUtc:HH:mm dd/MM/yyyy} from {f.City} on plane {f.PlaneId}.");
+                }
+            }
+
+            // --- Departure flights block ---
+            Console.WriteLine();
+            Console.WriteLine("Departure Flights:");
+            if (departures.Count == 0)
+            {
+                Console.WriteLine("(none)");
+            }
+            else
+            {
+                foreach (var f in departures)
+                {
+                    // Example: Flight QFA251 operated by Qantas departing at 12:00 01/04/2025 to Melbourne on plane QFA3D.
+                    var airlineName = GetAirlineNameFromCode(f.AirlineCode);
+                    Console.WriteLine(
+                        $"Flight {f.FlightCode} operated by {airlineName} departing at {f.ScheduledUtc:HH:mm dd/MM/yyyy} to {f.City} on plane {f.PlaneId}.");
+                }
             }
         }
 
@@ -620,6 +676,16 @@ namespace Airport.Cli
                 System.Globalization.CultureInfo.InvariantCulture,
                 System.Globalization.DateTimeStyles.None,
                 out dt);
+        }
+
+        /// Returns the full airline name for a given 3-letter airline code (e.g., "QFA" -> "Qantas").
+        /// Falls back to the code if the name is unknown.
+        private static string GetAirlineNameFromCode(string code)
+        {
+            // Reuse the AirlinesMenu we already defined.
+            var match = AirlinesMenu.FirstOrDefault(a => 
+                string.Equals(a.Code, code, StringComparison.OrdinalIgnoreCase));
+            return string.IsNullOrEmpty(match.Name) ? code : match.Name;
         }
 
         // pretty
