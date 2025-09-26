@@ -20,4 +20,10 @@ public static class Validation
     public static bool IsValidMobile(string s)   => MobileRx.IsMatch(s ?? "");
     public static bool IsValidEmail(string s)    => EmailRx.IsMatch(s ?? "");
     public static bool IsValidPassword(string s) => PwRx.IsMatch(s ?? "");
+
+    private static readonly Regex FlightIdRx = new(@"^[A-Z]{2,3}\d{3}$");   // e.g., QFA250
+    private static readonly Regex PlaneIdRx  = new(@"^[A-Z]{3}\d+[AD]$");   // e.g., QFA8A or QFA8D
+
+    public static bool IsValidFlightCode(string s) => FlightIdRx.IsMatch(s ?? "");
+    public static bool IsValidPlaneId(string s)    => PlaneIdRx.IsMatch(s ?? "");
 }
