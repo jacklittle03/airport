@@ -285,21 +285,6 @@ namespace Airport.Cli
             }
         }
 
-        // STUBS
-        private static void DelayArrivalFlightCli()
-        {
-            Console.WriteLine("Feature not yet available.");
-            // Next step: ask for FlightCode or PlaneId, ask for delay minutes,
-            // call a DelayFlightUseCase that updates the arrival and propagates
-            // the same delay to the paired departure (by PlaneId).
-        }
-
-        private static void DelayDepartureFlightCli()
-        {
-            Console.WriteLine("Feature not yet available.");
-            // Similar to above but for departures.
-        }
-
         // Create new arrival flight
         private static void RegisterArrivalFlightCli()
         {
@@ -378,7 +363,118 @@ namespace Airport.Cli
                 : $"Flight {flightCode} on plane {planeId} has been added to the system.");
         }
 
-        // List flights
+        /// Delay ARRIVAL Flight
+        private static void DelayArrivalFlightCli()
+        {
+            var listUse = new ListFlightsUseCase(FlightRepo);
+            var flights = listUse.HandleAsync().Result
+                .Where(f => f.Direction == FlightDirection.Arrival)
+                .OrderBy(f => f.ScheduledUtc)
+                .ToList();
+
+            if (flights.Count == 0)
+            {
+                Console.WriteLine("There are no arrival flights to delay.");
+                return;
+            }
+
+            Console.WriteLine("Please enter the arrival flight:");
+            for (int i = 0; i < flights.Count; i++)
+                Console.WriteLine($"{i + 1}. {FormatArrivalLine(flights[i])}");
+            Console.WriteLine($"Please enter a choice between 1 and {flights.Count}:");
+
+            int index;
+            while (!int.TryParse(Console.ReadLine(), out index) || index < 1 || index > flights.Count)
+            {
+                Console.WriteLine("Invalid choice.");
+                Console.WriteLine($"Please enter a choice between 1 and {flights.Count}:");
+            }
+
+            var chosen = flights[index - 1];
+
+            // Delay minutes
+            Console.WriteLine("Please enter in your minutes delayed:");
+            int minutes;
+            while (!int.TryParse(Console.ReadLine(), out minutes) || minutes <= 0)
+            {
+                Console.WriteLine("Error: Invalid number.");
+                Console.WriteLine("Please enter in your minutes delayed:");
+            }
+
+            // Run use case
+            var delayUse = new DelayFlightUseCase(FlightRepo);
+            var res = delayUse.HandleAsync(
+                new DelayFlightRequest(chosen.FlightCode, TimeSpan.FromMinutes(minutes))
+            ).Result;
+
+            if (res is null)
+            {
+                Console.WriteLine("Error: Flight not found or invalid input.");
+                return;
+            }
+
+            Console.WriteLine($"Flight {res.UpdatedFlight.FlightCode} has been delayed by {minutes} minutes.");
+            Console.WriteLine($"New time: {res.UpdatedFlight.ScheduledUtc:HH:mm dd/MM/yyyy}.");
+
+            if (res.UpdatedPairedDeparture is not null)
+            {
+                Console.WriteLine($"The corresponding departure ({res.UpdatedPairedDeparture.FlightCode}) has also been delayed to {res.UpdatedPairedDeparture.ScheduledUtc:HH:mm dd/MM/yyyy}.");
+            }
+}
+
+        /// Delay DEPARTURE flight only (no auto-propagation)
+        private static void DelayDepartureFlightCli()
+        {
+            var listUse = new ListFlightsUseCase(FlightRepo);
+            var flights = listUse.HandleAsync().Result
+                .Where(f => f.Direction == FlightDirection.Departure)
+                .OrderBy(f => f.ScheduledUtc)
+                .ToList();
+
+            if (flights.Count == 0)
+            {
+                Console.WriteLine("There are no departure flights to delay.");
+                return;
+            }
+
+            Console.WriteLine("Please enter the departure flight:");
+            for (int i = 0; i < flights.Count; i++)
+                Console.WriteLine($"{i + 1}. {FormatDepartureLine(flights[i])}");
+            Console.WriteLine($"Please enter a choice between 1 and {flights.Count}:");
+
+            int index;
+            while (!int.TryParse(Console.ReadLine(), out index) || index < 1 || index > flights.Count)
+            {
+                Console.WriteLine("Invalid choice.");
+                Console.WriteLine($"Please enter a choice between 1 and {flights.Count}:");
+            }
+
+            var chosen = flights[index - 1];
+
+            Console.WriteLine("Please enter in your minutes delayed:");
+            int minutes;
+            while (!int.TryParse(Console.ReadLine(), out minutes) || minutes <= 0)
+            {
+                Console.WriteLine("Error: Invalid number.");
+                Console.WriteLine("Please enter in your minutes delayed:");
+            }
+
+            var delayUse = new DelayFlightUseCase(FlightRepo);
+            var res = delayUse.HandleAsync(
+                new DelayFlightRequest(chosen.FlightCode, TimeSpan.FromMinutes(minutes))
+            ).Result;
+
+            if (res is null)
+            {
+                Console.WriteLine("Error: Flight not found or invalid input.");
+                return;
+            }
+
+            Console.WriteLine($"Flight {res.UpdatedFlight.FlightCode} has been delayed by {minutes} minutes.");
+            Console.WriteLine($"New time: {res.UpdatedFlight.ScheduledUtc:HH:mm dd/MM/yyyy}.");
+        }
+
+        /// List flights
         private static void ListFlightsCli()
         {
             var use = new ListFlightsUseCase(FlightRepo);
@@ -678,14 +774,26 @@ namespace Airport.Cli
                 out dt);
         }
 
-        /// Returns the full airline name for a given 3-letter airline code (e.g., "QFA" -> "Qantas").
-        /// Falls back to the code if the name is unknown.
+        /// Pretty airline name from code (QFA -> Qantas). Falls back to code if unknown.
         private static string GetAirlineNameFromCode(string code)
         {
-            // Reuse the AirlinesMenu we already defined.
-            var match = AirlinesMenu.FirstOrDefault(a => 
+            var m = AirlinesMenu.FirstOrDefault(a => 
                 string.Equals(a.Code, code, StringComparison.OrdinalIgnoreCase));
-            return string.IsNullOrEmpty(match.Name) ? code : match.Name;
+            return string.IsNullOrWhiteSpace(m.Name) ? code : m.Name;
+        }
+
+        /// Formats a single arrival line
+        private static string FormatArrivalLine(FlightView f)
+        {
+            var airlineName = GetAirlineNameFromCode(f.AirlineCode);
+            return $"Flight {f.FlightCode} operated by {airlineName} arriving at {f.ScheduledUtc:HH:mm dd/MM/yyyy} from {f.City} on plane {f.PlaneId}.";
+        }
+
+        /// Formats a single departure line 
+        private static string FormatDepartureLine(FlightView f)
+        {
+            var airlineName = GetAirlineNameFromCode(f.AirlineCode);
+            return $"Flight {f.FlightCode} operated by {airlineName} departing at {f.ScheduledUtc:HH:mm dd/MM/yyyy} to {f.City} on plane {f.PlaneId}.";
         }
 
         // pretty
