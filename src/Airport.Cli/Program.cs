@@ -3,12 +3,16 @@ using Airport.Domain;
 using Airport.Infrastructure;
 
 namespace Airport.Cli
+
 {
     internal static class Program
     {
-        // Shared in-memory repository for this run
+        // Shared in-memory repository 
         private static readonly IRepository<User> UserRepo =
             new InMemoryRepository<User>(u => u.Id);
+        
+        private static readonly IRepository<Booking> BookingRepo =
+            new InMemoryRepository<Booking>(b => b.Id);
         
         private static readonly IRepository<Flight> FlightRepo =
             new InMemoryRepository<Flight>(f => f.Id);
@@ -122,10 +126,13 @@ namespace Airport.Cli
                         ChangePassword(userId);
                         break;
                     case "3":
+                        BookArrivalFlightCli(userId);
+                        break;
                     case "4":
+                        BookDepartureFlightCli(userId);
+                        break;
                     case "5":
-                        Console.WriteLine("Feature not yet available.");
-                        Pause();
+                        ShowMyTicketsCli(userId);
                         break;
                     case "6":
                         Console.WriteLine("Logged out.");
@@ -223,6 +230,101 @@ namespace Airport.Cli
             Console.WriteLine("Password changed successfully.");
             Pause();
         }
+        
+        /// Book Arrival Flight
+        private static void BookArrivalFlightCli(Guid userId)
+        {
+            // list arrival flights to pick
+            var lf = new ListFlightsUseCase(FlightRepo);
+            var arrivals = lf.HandleAsync().Result
+                .Where(f => f.Direction == FlightDirection.Arrival)
+                .OrderBy(f => f.ScheduledUtc)
+                .ToList();
+
+            if (arrivals.Count == 0) { Console.WriteLine("No arrival flights available."); Pause(); return; }
+
+            Console.WriteLine("Please select an arrival flight:");
+            for (int i = 0; i < arrivals.Count; i++)
+                Console.WriteLine($"{i + 1}. Flight {arrivals[i].FlightCode} arriving at {arrivals[i].ScheduledUtc:HH:mm dd/MM/yyyy} from {arrivals[i].City} on plane {arrivals[i].PlaneId}.");
+            Console.WriteLine($"Please enter a choice between 1 and {arrivals.Count}:");
+
+            int idx;
+            while (!int.TryParse(Console.ReadLine(), out idx) || idx < 1 || idx > arrivals.Count)
+            {
+                Console.WriteLine("Invalid choice.");
+                Console.WriteLine($"Please enter a choice between 1 and {arrivals.Count}:");
+            }
+
+            Console.WriteLine("Please enter in your seat (row 1-10 and column A-D, e.g., 6B):");
+            var seat = (Console.ReadLine() ?? "").Trim().ToUpperInvariant();
+
+            var use = new BookArrivalFlightUseCase(UserRepo, FlightRepo, BookingRepo);
+            var res = use.HandleAsync(new BookArrivalRequest(userId, arrivals[idx - 1].Id, seat)).Result;
+
+            if (res is null)
+                Console.WriteLine("Error: Could not complete booking (invalid seat, duplicate booking, or plane full).");
+            else
+                Console.WriteLine($"Booked {res.FlightCode} arriving at {res.WhenUtc:HH:mm dd/MM/yyyy} from {res.City}. Seat: {res.Seat}.");
+
+            Pause();
+        }
+
+        /// Book a DEPARTURE flight 
+        private static void BookDepartureFlightCli(Guid userId)
+        {
+            var lf = new ListFlightsUseCase(FlightRepo);
+            var deps = lf.HandleAsync().Result
+                .Where(f => f.Direction == FlightDirection.Departure)
+                .OrderBy(f => f.ScheduledUtc)
+                .ToList();
+
+            if (deps.Count == 0) { Console.WriteLine("No departure flights available."); Pause(); return; }
+
+            Console.WriteLine("Please select a departure flight:");
+            for (int i = 0; i < deps.Count; i++)
+                Console.WriteLine($"{i + 1}. Flight {deps[i].FlightCode} departing at {deps[i].ScheduledUtc:HH:mm dd/MM/yyyy} to {deps[i].City} on plane {deps[i].PlaneId}.");
+            Console.WriteLine($"Please enter a choice between 1 and {deps.Count}:");
+
+            int idx;
+            while (!int.TryParse(Console.ReadLine(), out idx) || idx < 1 || idx > deps.Count)
+            {
+                Console.WriteLine("Invalid choice.");
+                Console.WriteLine($"Please enter a choice between 1 and {deps.Count}:");
+            }
+
+            Console.WriteLine("Please enter in your seat (row 1-10 and column A-D, e.g., 6B):");
+            var seat = (Console.ReadLine() ?? "").Trim().ToUpperInvariant();
+
+            var use = new BookDepartureFlightUseCase(UserRepo, FlightRepo, BookingRepo);
+            var res = use.HandleAsync(new BookDepartureRequest(userId, deps[idx - 1].Id, seat)).Result;
+
+            if (res is null)
+                Console.WriteLine("Error: Could not complete booking (invalid seat, duplicate booking, or plane full).");
+            else
+                Console.WriteLine($"Booked {res.FlightCode} departing at {res.WhenUtc:HH:mm dd/MM/yyyy} to {res.City}. Seat: {res.Seat}.");
+
+            Pause();
+        }
+
+        /// Show User's tickets 
+        private static void ShowMyTicketsCli(Guid userId)
+        {
+            var use = new ListMyTicketsUseCase(BookingRepo);
+            var tickets = use.HandleAsync(userId).Result;
+
+            if (tickets.Count == 0) { Console.WriteLine("You have no tickets."); Pause(); return; }
+
+            Console.WriteLine();
+            foreach (var t in tickets)
+            {
+                if (t.Direction == FlightDirection.Arrival)
+                    Console.WriteLine($"Arrival ticket: Flight {t.FlightCode}, from {t.City}, arriving at {t.WhenUtc:HH:mm dd/MM/yyyy}, seat {t.Seat}.");
+                else
+                    Console.WriteLine($"Departure ticket: Flight {t.FlightCode}, to {t.City}, departing at {t.WhenUtc:HH:mm dd/MM/yyyy}, seat {t.Seat}.");
+            }
+            Pause();
+        }
+
 
         // ================== FLIGHT MANAGER MENU ==================
         private static void FlightManagerMenu(Guid userId)
@@ -253,23 +355,23 @@ namespace Airport.Cli
                         ChangePassword(userId);
                         break;
                     case "3":
-                        RegisterArrivalFlightCli();   // already implemented
+                        RegisterArrivalFlightCli();
                         Pause();
                         break;
                     case "4":
-                        RegisterDepartureFlightCli(); // already implemented
+                        RegisterDepartureFlightCli();
                         Pause();
                         break;
                     case "5":
-                        DelayArrivalFlightCli();      // stub below
+                        DelayArrivalFlightCli();
                         Pause();
                         break;
                     case "6":
-                        DelayDepartureFlightCli();    // stub below
+                        DelayDepartureFlightCli();
                         Pause();
                         break;
                     case "7":
-                        ListFlightsCli();             // already implemented
+                        ListFlightsCli();
                         Pause();
                         break;
                     case "8":
