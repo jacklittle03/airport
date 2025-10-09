@@ -85,6 +85,8 @@ namespace Airport.Cli
             var user = UserRepo.GetByIdAsync(result.UserId).Result;
             if (user is FlightManager)
                 FlightManagerMenu(result.UserId);
+            else if (user is FrequentFlyer)
+                FrequentFlyerMenu(result.UserId);
             else
                 TravellerMenu(result.UserId);
         }
@@ -317,14 +319,117 @@ namespace Airport.Cli
             Console.WriteLine();
             foreach (var t in tickets)
             {
+                var userObj = UserRepo.GetByIdAsync(userId).Result;
+                var isFrequent = userObj is FrequentFlyer;
+
                 if (t.Direction == FlightDirection.Arrival)
+                {
                     Console.WriteLine($"Arrival ticket: Flight {t.FlightCode}, from {t.City}, arriving at {t.WhenUtc:HH:mm dd/MM/yyyy}, seat {t.Seat}.");
+                    if (isFrequent)
+                        Console.WriteLine($"Points earned: {t.PointsEarned}");
+                }
                 else
+                {
                     Console.WriteLine($"Departure ticket: Flight {t.FlightCode}, to {t.City}, departing at {t.WhenUtc:HH:mm dd/MM/yyyy}, seat {t.Seat}.");
+                    if (isFrequent)
+                        Console.WriteLine($"Points earned: {t.PointsEarned}");
+                }
+
             }
             Pause();
         }
 
+        // ================== FREQUENT FLYER MENU ==================
+        private static void FrequentFlyerMenu(Guid userId)
+        {
+            bool inSession = true;
+            while (inSession)
+            {
+                Console.WriteLine();
+                Console.WriteLine("Frequent Flyer Menu.");
+                Console.WriteLine("Please make a choice from the menu below:");
+                Console.WriteLine("1. See my details.");
+                Console.WriteLine("2. Change password.");
+                Console.WriteLine("3. Book an arrival flight.");
+                Console.WriteLine("4. Book a departure flight.");
+                Console.WriteLine("5. See flight details.");
+                Console.WriteLine("6. See frequent flyer points.");
+                Console.WriteLine("7. Logout.");
+                Console.WriteLine("Please enter a choice between 1 and 7:");
+                var choice = Console.ReadLine();
+
+                switch (choice)
+                {
+                    case "1":
+                        ShowMyDetails(userId);
+                        break;
+                    case "2":
+                        ChangePassword(userId);
+                        break;
+                    case "3":
+                        BookArrivalFlightCli(userId);
+                        break;
+                    case "4":
+                        BookDepartureFlightCli(userId);
+                        break;
+                    case "5":
+                        ShowMyTicketsCli(userId);
+                        break;
+                    case "6":
+                        ShowFrequentFlyerPointsCli(userId);
+                        break;
+                    case "7":
+                        Console.WriteLine("Logged out.");
+                        inSession = false;
+                        Pause();
+                        break;
+                    default:
+                        Console.WriteLine("Invalid choice.");
+                        Pause();
+                        break;
+                }
+            }
+        }
+   
+        /// Shows current FF points, the points from the user's booked arrival and departure flights,
+        /// and the new total after both flights are completed. Matches the example output style.
+        private static void ShowFrequentFlyerPointsCli(Guid userId)
+        {
+            var userObj = UserRepo.GetByIdAsync(userId).Result;
+            if (userObj is not FrequentFlyer ff)
+            {
+                Console.WriteLine("This option is only available to frequent flyers.");
+                Pause();
+                return;
+            }
+
+            // Find the user's booked arrival/departure 
+            var myBookings = BookingRepo.ListAsync().Result.Where(b => b.UserId == userId).ToList();
+            var myArrival   = myBookings.FirstOrDefault(b => b.Direction == FlightDirection.Arrival);
+            var myDeparture = myBookings.FirstOrDefault(b => b.Direction == FlightDirection.Departure);
+
+            // Lookup points by city using the assignment table
+            int arrivalPts   = 0;
+            int departurePts = 0;
+
+            if (myArrival != null && AirportRules.CityPoints.TryGetValue(myArrival.City, out var ap))
+                arrivalPts = ap;
+
+            if (myDeparture != null && AirportRules.CityPoints.TryGetValue(myDeparture.City, out var dp))
+                departurePts = dp;
+
+            // Format numbers with thousands separators 
+            string F(int n) => n.ToString("N0", System.Globalization.CultureInfo.InvariantCulture);
+
+            Console.WriteLine($"Your current points are: {F(ff.Points)}.");
+            Console.WriteLine($"Your points from your arrival flight will be : {F(arrivalPts)}.");
+            Console.WriteLine($"Your points from your departure flight will be: {F(departurePts)}.");
+
+            var newTotal = ff.Points + arrivalPts + departurePts;
+            Console.WriteLine($"After completing your flights your new points will be: {F(newTotal)}.");
+
+            Pause();
+        }
 
         // ================== FLIGHT MANAGER MENU ==================
         private static void FlightManagerMenu(Guid userId)

@@ -13,20 +13,22 @@ public sealed class Booking
     public string FlightCode { get; private set; } = "";
     public string City { get; private set; } = "";         // Arrival: departure city; Departure: arrival city
     public DateTime WhenUtc { get; private set; }
-
+    public int PointsEarned { get; private set; }          // Points for each flight
     private Booking() { }
 
-    public static Booking Create(Guid userId, Flight flight, string seat)
-        => new Booking
-        {
-            UserId = userId,
-            FlightId = flight.Id,
-            Direction = flight.Direction,
-            Seat = seat,
-            FlightCode = flight.FlightCode,
-            City = flight.City,
-            WhenUtc = flight.ScheduledUtc
-        };
+    public static Booking Create(Guid userId, Flight flight, string seat, int pointsEarned)
+    => new Booking
+    {
+        UserId = userId,
+        FlightId = flight.Id,
+        Direction = flight.Direction,
+        Seat = seat,
+        FlightCode = flight.FlightCode,
+        City = flight.City,
+        WhenUtc = flight.ScheduledUtc,
+        PointsEarned = pointsEarned
+    };
+
 
     public void MoveSeat(string newSeat) => Seat = newSeat;
 }

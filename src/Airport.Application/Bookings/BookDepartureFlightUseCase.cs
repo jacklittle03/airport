@@ -45,7 +45,18 @@ public sealed class BookDepartureFlightUseCase
             await _bookings.UpdateAsync(seatTaken);
         }
 
-        var booking = Booking.Create(req.UserId, flight, req.Seat);
+        var points = 0;
+        if (user is FrequentFlyer)
+        {
+            // City is the City property on the Flight
+            if (AirportRules.CityPoints.TryGetValue(flight.City, out var cityPoints))
+            {
+                points = cityPoints;
+            }
+        }
+
+        var booking = Booking.Create(req.UserId, flight, req.Seat, points);
+
         await _bookings.AddAsync(booking);
 
         return new BookResponse(booking.Id, flight.FlightCode, booking.Seat, flight.ScheduledUtc, flight.City);

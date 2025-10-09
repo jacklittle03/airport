@@ -2,7 +2,7 @@ using Airport.Domain;
 
 namespace Airport.Application;
 
-public record TicketView(FlightDirection Direction, string FlightCode, string City, DateTime WhenUtc, string Seat);
+public record TicketView(FlightDirection Direction, string FlightCode, string City, DateTime WhenUtc, string Seat, int PointsEarned);
 
 public sealed class ListMyTicketsUseCase
 {
@@ -15,7 +15,7 @@ public sealed class ListMyTicketsUseCase
         var mine = (await _bookings.ListAsync())
             .Where(b => b.UserId == userId)
             .OrderBy(b => b.WhenUtc)
-            .Select(b => new TicketView(b.Direction, b.FlightCode, b.City, b.WhenUtc, b.Seat))
+            .Select(b => new TicketView(b.Direction, b.FlightCode, b.City, b.WhenUtc, b.Seat, b.PointsEarned))
             .ToList();
         return mine;
     }
