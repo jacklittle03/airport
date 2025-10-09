@@ -233,17 +233,21 @@ namespace Airport.Cli
             Pause();
         }
         
-        /// Book Arrival Flight
+        /// Book an ARRIVAL flight 
         private static void BookArrivalFlightCli(Guid userId)
         {
-            // list arrival flights to pick
             var lf = new ListFlightsUseCase(FlightRepo);
             var arrivals = lf.HandleAsync().Result
                 .Where(f => f.Direction == FlightDirection.Arrival)
                 .OrderBy(f => f.ScheduledUtc)
                 .ToList();
 
-            if (arrivals.Count == 0) { Console.WriteLine("No arrival flights available."); Pause(); return; }
+            if (arrivals.Count == 0)
+            {
+                Console.WriteLine("No arrival flights available.");
+                Pause();
+                return;
+            }
 
             Console.WriteLine("Please select an arrival flight:");
             for (int i = 0; i < arrivals.Count; i++)
@@ -257,14 +261,32 @@ namespace Airport.Cli
                 Console.WriteLine($"Please enter a choice between 1 and {arrivals.Count}:");
             }
 
+            // Prevent double arrival bookings for same user
+            var myBookings = BookingRepo.ListAsync().Result.Where(b => b.UserId == userId).ToList();
+            if (myBookings.Any(b => b.Direction == FlightDirection.Arrival))
+            {
+                Console.WriteLine("Error: You already have an arrival flight booked.");
+                Pause();
+                return;
+            }
+
+            // Prompt for seat
             Console.WriteLine("Please enter in your seat (row 1-10 and column A-D, e.g., 6B):");
             var seat = (Console.ReadLine() ?? "").Trim().ToUpperInvariant();
 
+            if (!Validation.IsValidSeat(seat))
+            {
+                Console.WriteLine("Error: Invalid seat format.");
+                Pause();
+                return;
+            }
+
+            // Attempt booking
             var use = new BookArrivalFlightUseCase(UserRepo, FlightRepo, BookingRepo);
             var res = use.HandleAsync(new BookArrivalRequest(userId, arrivals[idx - 1].Id, seat)).Result;
 
             if (res is null)
-                Console.WriteLine("Error: Could not complete booking (invalid seat, duplicate booking, or plane full).");
+                Console.WriteLine("Error: Could not complete booking (seat taken, plane full, or other rule).");
             else
                 Console.WriteLine($"Booked {res.FlightCode} arriving at {res.WhenUtc:HH:mm dd/MM/yyyy} from {res.City}. Seat: {res.Seat}.");
 
@@ -275,38 +297,62 @@ namespace Airport.Cli
         private static void BookDepartureFlightCli(Guid userId)
         {
             var lf = new ListFlightsUseCase(FlightRepo);
-            var deps = lf.HandleAsync().Result
+            var departures = lf.HandleAsync().Result
                 .Where(f => f.Direction == FlightDirection.Departure)
                 .OrderBy(f => f.ScheduledUtc)
                 .ToList();
 
-            if (deps.Count == 0) { Console.WriteLine("No departure flights available."); Pause(); return; }
-
-            Console.WriteLine("Please select a departure flight:");
-            for (int i = 0; i < deps.Count; i++)
-                Console.WriteLine($"{i + 1}. Flight {deps[i].FlightCode} departing at {deps[i].ScheduledUtc:HH:mm dd/MM/yyyy} to {deps[i].City} on plane {deps[i].PlaneId}.");
-            Console.WriteLine($"Please enter a choice between 1 and {deps.Count}:");
-
-            int idx;
-            while (!int.TryParse(Console.ReadLine(), out idx) || idx < 1 || idx > deps.Count)
+            if (departures.Count == 0)
             {
-                Console.WriteLine("Invalid choice.");
-                Console.WriteLine($"Please enter a choice between 1 and {deps.Count}:");
+                Console.WriteLine("No departure flights available.");
+                Pause();
+                return;
             }
 
+            Console.WriteLine("Please select a departure flight:");
+            for (int i = 0; i < departures.Count; i++)
+                Console.WriteLine($"{i + 1}. Flight {departures[i].FlightCode} departing at {departures[i].ScheduledUtc:HH:mm dd/MM/yyyy} to {departures[i].City} on plane {departures[i].PlaneId}.");
+            Console.WriteLine($"Please enter a choice between 1 and {departures.Count}:");
+
+            int idx;
+            while (!int.TryParse(Console.ReadLine(), out idx) || idx < 1 || idx > departures.Count)
+            {
+                Console.WriteLine("Invalid choice.");
+                Console.WriteLine($"Please enter a choice between 1 and {departures.Count}:");
+            }
+
+            // Prevent double departure bookings for same user
+            var myBookings = BookingRepo.ListAsync().Result.Where(b => b.UserId == userId).ToList();
+            if (myBookings.Any(b => b.Direction == FlightDirection.Departure))
+            {
+                Console.WriteLine("Error: You already have a departure flight booked.");
+                Pause();
+                return;
+            }
+
+            // Prompt for seat
             Console.WriteLine("Please enter in your seat (row 1-10 and column A-D, e.g., 6B):");
             var seat = (Console.ReadLine() ?? "").Trim().ToUpperInvariant();
 
+            if (!Validation.IsValidSeat(seat))
+            {
+                Console.WriteLine("Error: Invalid seat format.");
+                Pause();
+                return;
+            }
+
+            // Attempt booking
             var use = new BookDepartureFlightUseCase(UserRepo, FlightRepo, BookingRepo);
-            var res = use.HandleAsync(new BookDepartureRequest(userId, deps[idx - 1].Id, seat)).Result;
+            var res = use.HandleAsync(new BookDepartureRequest(userId, departures[idx - 1].Id, seat)).Result;
 
             if (res is null)
-                Console.WriteLine("Error: Could not complete booking (invalid seat, duplicate booking, or plane full).");
+                Console.WriteLine("Error: Could not complete booking (seat taken, plane full, or other rule).");
             else
                 Console.WriteLine($"Booked {res.FlightCode} departing at {res.WhenUtc:HH:mm dd/MM/yyyy} to {res.City}. Seat: {res.Seat}.");
 
             Pause();
         }
+
 
         /// Show User's tickets 
         private static void ShowMyTicketsCli(Guid userId)

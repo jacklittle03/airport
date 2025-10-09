@@ -39,7 +39,7 @@ public sealed class BookDepartureFlightUseCase
         if (seatTaken != null && isFrequentFlyer)
         {
             var currentSeats = new HashSet<string>(allForThisFlight.Select(b => b.Seat), StringComparer.OrdinalIgnoreCase);
-            var newSeat = SeatOrder.NextSeatsFrom(req.Seat).FirstOrDefault(s => !currentSeats.Contains(s));
+            var newSeat = SeatOrder.NextSeatsSameColumn(req.Seat).FirstOrDefault(s => !currentSeats.Contains(s));
             if (newSeat is null) return null;
             seatTaken.MoveSeat(newSeat);
             await _bookings.UpdateAsync(seatTaken);

@@ -47,7 +47,7 @@ public sealed class BookArrivalFlightUseCase
         {
             // FF takes the seat; move the displaced traveller to next available seat
             var currentSeats = new HashSet<string>(allForThisFlight.Select(b => b.Seat), StringComparer.OrdinalIgnoreCase);
-            var newSeat = SeatOrder.NextSeatsFrom(req.Seat).FirstOrDefault(s => !currentSeats.Contains(s));
+            var newSeat = SeatOrder.NextSeatsSameColumn(req.Seat).FirstOrDefault(s => !currentSeats.Contains(s));
             if (newSeat is null) return null; // plane full
             seatTaken.MoveSeat(newSeat);
             await _bookings.UpdateAsync(seatTaken);
