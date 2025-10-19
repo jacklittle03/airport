@@ -19,20 +19,20 @@ namespace Airport.Cli
 
         private static void Main()
         {
+            PrintBanner();
             bool running = true;
             while (running)
             {
-                Console.Clear();
-                PrintBanner();
+                SafeClear();
+
         // ================== MAIN MENU ==================
                 Console.WriteLine();
                 Console.WriteLine("Please make a choice from the menu below:");
                 Console.WriteLine("1. Login as a registered user.");
                 Console.WriteLine("2. Register as a new user.");
                 Console.WriteLine("3. Exit.");
-                Console.WriteLine("Please enter a choice between 1 and 3: ");
-
-                var input = Console.ReadLine();
+                Console.WriteLine("Please enter a choice between 1 and 3:");
+                var input = ReadLineOrExit();
 
                 switch (input)
                 {
@@ -59,45 +59,94 @@ namespace Airport.Cli
 
         private static void DoLogin()
         {
-            var login = new LoginUseCase(UserRepo);
-
-            Console.WriteLine();
             Console.WriteLine("Login Menu.");
-            Console.WriteLine("Please enter in your email: ");
-            var email = (Console.ReadLine() ?? string.Empty).Trim();
-
-            Console.WriteLine("Please enter in your password: ");
-            var password = Console.ReadLine() ?? string.Empty;
-
-            var result = login.HandleAsync(new LoginRequest(email, password)).Result;
-            if (result is null)
+            // If no users exist yet
+            if (!UserRepo.ListAsync().Result.Any())
             {
-                Console.WriteLine("Login failed. Please check your credentials.");
-                Pause();
+                Console.WriteLine("#####");
+                Console.WriteLine("# Error - There are no people registered.");
+                Console.WriteLine();
+                Console.WriteLine("#####");
                 return;
             }
+        
+            // ask for email
+            string email;
+            while (true)
+            {
+                Console.WriteLine("Please enter in your email:");
+                email = (ReadLineOrExit() ?? "").Trim();
 
-            var firstName = ExtractFirstName(result.Name);
-            Console.WriteLine($"Welcome back {firstName}.");
-            Pause();
+                if (!Validation.IsValidEmail(email))
+                {
+                    Console.WriteLine("#####");
+                    Console.WriteLine("# Error - Supplied email is invalid.");
+                    Console.WriteLine("# Please try again.");
+                    Console.WriteLine("#####");
+                    continue;
+                }
 
-            // Different menus depending on user type
-            var user = UserRepo.GetByIdAsync(result.UserId).Result;
-            if (user is FlightManager)
-                FlightManagerMenu(result.UserId);
-            else if (user is FrequentFlyer)
-                FrequentFlyerMenu(result.UserId);
-            else
-                TravellerMenu(result.UserId);
+                // check if it's registered
+                var existingUser = UserRepo.ListAsync().Result
+                    .FirstOrDefault(u => u.Email.Equals(email, StringComparison.OrdinalIgnoreCase));
+
+                if (existingUser == null)
+                {
+                    Console.WriteLine("#####");
+                    Console.WriteLine("# Error - Email is not registered.");
+                    Console.WriteLine();
+                    Console.WriteLine("#####");
+                    continue;
+                }
+
+                break;   // valid + registered email
+            }
+
+            // Prompt for password with retry loop
+            string password;
+            while (true)
+            {
+                Console.WriteLine("Please enter in your password:");
+                password = ReadLineOrExit() ?? string.Empty;
+
+                // Check password format first
+                if (!Validation.IsValidPassword(password))
+                {
+                    Console.WriteLine("#####");
+                    Console.WriteLine("# Error - Supplied password is invalid.");
+                    Console.WriteLine("# Please try again.");
+                    Console.WriteLine("#####");
+                    continue;
+                }
+
+                // Check correct password for that email
+                var login = new LoginUseCase(UserRepo);
+                var result = login.HandleAsync(new LoginRequest(email, password)).Result;
+                if (result == null)
+                {
+                    Console.WriteLine("#####");
+                    Console.WriteLine("# Error - Incorrect Password.");
+                    Console.WriteLine();
+                    Console.WriteLine("#####");
+                    continue;
+                }
+
+                // Successful login
+                Console.WriteLine($"Welcome back {result.Name}.");
+
+                // Route by user type
+                var user = UserRepo.GetByIdAsync(result.UserId).Result;
+                if (user is FlightManager)
+                    FlightManagerMenu(result.UserId);
+                else if (user is FrequentFlyer)
+                    FrequentFlyerMenu(result.UserId);
+                else
+                    TravellerMenu(result.UserId);
+
+                break;
+            }
         }
 
-        private static string ExtractFirstName(string fullName)
-        {
-            var trimmed = (fullName ?? string.Empty).Trim();
-            if (string.IsNullOrEmpty(trimmed)) return "User";
-            var i = trimmed.IndexOf(' ');
-            return i < 0 ? trimmed : trimmed[..i];
-        }
 
         // ================== TRAVELLER MENU ==================
 
@@ -115,9 +164,8 @@ namespace Airport.Cli
                 Console.WriteLine("4. Book a departure flight.");
                 Console.WriteLine("5. See flight details.");
                 Console.WriteLine("6. Logout.");
-                Console.WriteLine("Please enter a choice between 1 and 6: ");
-
-                var choice = Console.ReadLine();
+                Console.WriteLine("Please enter a choice between 1 and 6:");
+                var choice = ReadLineOrExit();
 
                 switch (choice)
                 {
@@ -137,7 +185,6 @@ namespace Airport.Cli
                         ShowMyTicketsCli(userId);
                         break;
                     case "6":
-                        Console.WriteLine("Logged out.");
                         inSession = false;
                         Pause();
                         break;
@@ -153,33 +200,28 @@ namespace Airport.Cli
         private static void ShowMyDetails(Guid userId)
         {
             var user = UserRepo.GetByIdAsync(userId).Result;
-            if (user is null)
-            {
-                Console.WriteLine("User not found.");
-                Pause();
-                return;
-            }
+            if (user is null) return;
 
             Console.WriteLine();
             Console.WriteLine("Your details.");
-            Console.WriteLine($"Name  : {user.Name}");
-            Console.WriteLine($"Age   : {user.Age}");
+            Console.WriteLine($"Name: {user.Name}");
+            Console.WriteLine($"Age: {user.Age}");
             Console.WriteLine($"Mobile phone number: {user.Mobile}");
-            Console.WriteLine($"Email : {user.Email}");
-            
-            // User type specific details
-            switch (user)
+            Console.WriteLine($"Email: {user.Email}");
+
+            // Frequent Flyer extras
+            if (user is FrequentFlyer ff)
             {
-             /*   case FrequentFlyer ff:
-                    Console.WriteLine($"Frequent Flyer Number: {ff.FrequentFlyerNumber}");
-                    Console.WriteLine($"Frequent Flyer Points: {ff.FrequentFlyerPoints}");
-                    break; */
-                case FlightManager fm:
-                    Console.WriteLine($"Staff ID: {fm.StaffId}");
-                    break;
+                Console.WriteLine($"Frequent flyer number: {ff.FrequentFlyerNumber}");
+                Console.WriteLine($"Frequent flyer points: {ff.Points:N0}");
             }
 
-            Pause();
+            // Flight Manager extra
+            if (user is FlightManager fm)
+            {
+                Console.WriteLine($"Staff ID: {fm.StaffId}");
+            }
+
         }
         
         // Change Password
@@ -193,46 +235,56 @@ namespace Airport.Cli
                 return;
             }
 
-            // Current password check
-            Console.WriteLine("Please enter your current password:");
-            var current = Console.ReadLine() ?? string.Empty;
-
-            if ((user.PasswordHash ?? string.Empty) != current)
+            // Loop until CURRENT password matches
+            while (true)
             {
-                Console.WriteLine("Error: Incorrect password.");
-                Pause();
-                return;
+                Console.WriteLine("Please enter your current password.");
+                var current = ReadLineOrExit() ?? string.Empty;
+
+                if ((user.PasswordHash ?? string.Empty) == current)
+                    break; 
+
+                Console.WriteLine("#####");
+                Console.WriteLine("# Error - Entered password does not match existing password.");
+                Console.WriteLine("# Please try again.");
+                Console.WriteLine("#####");
+                // loop and ask for current password again
             }
 
-            // New password prompt 
-            Console.WriteLine("Please enter your new password:");
-            var newPassword = Console.ReadLine() ?? string.Empty;
-
-            // Check if new password is the same as the old one
-            if (newPassword == user.PasswordHash)
+            // NEW password step 
+            while (true)
             {
-                Console.WriteLine("Password already in use.");
-                Pause();
-                return;
+                Console.WriteLine("Please enter your new password.");
+                var newPassword = ReadLineOrExit() ?? string.Empty;
+
+                // not allowed to reuse the same password
+                if (newPassword == user.PasswordHash)
+                {
+                    Console.WriteLine("####");
+                    Console.WriteLine("# Error - Password already used in the past.");
+                    Console.WriteLine("# Please try again.");
+                    Console.WriteLine("####");
+                    continue;
+                }
+
+                // enforce password rules
+                if (!Validation.IsValidPassword(newPassword))
+                {
+                    Console.WriteLine("####");
+                    Console.WriteLine("# Error - Supplied password is invalid.");
+                    Console.WriteLine("# Please try again.");
+                    Console.WriteLine("####");
+                    continue;
+                }
+
+                // success: persist and confirm
+                user.UpdatePassword(newPassword);
+                UserRepo.UpdateAsync(user).Wait();
+
+                break;
             }
+}
 
-            // Validate new password
-            if (!Validation.IsValidPassword(newPassword))
-            {
-                Console.WriteLine("Error: Invalid password.");
-                Pause();
-                return;
-            }
-
-            // Update
-            user.UpdatePassword(newPassword);
-            UserRepo.UpdateAsync(user).Wait();
-
-            // Success
-            Console.WriteLine("Password changed successfully.");
-            Pause();
-        }
-        
         /// Book an ARRIVAL flight 
         private static void BookArrivalFlightCli(Guid userId)
         {
@@ -242,6 +294,17 @@ namespace Airport.Cli
                 .OrderBy(f => f.ScheduledUtc)
                 .ToList();
 
+            // Prevent double arrival bookings for same user
+            var myBookings = BookingRepo.ListAsync().Result.Where(b => b.UserId == userId).ToList();
+            if (myBookings.Any(b => b.Direction == FlightDirection.Arrival))
+            {
+                Console.WriteLine("#####");
+                Console.WriteLine("# Error - You already have an arrival flight. You can not book another.");
+                Console.WriteLine("#####");
+                Pause();
+                return;
+            }
+
             if (arrivals.Count == 0)
             {
                 Console.WriteLine("No arrival flights available.");
@@ -249,51 +312,132 @@ namespace Airport.Cli
                 return;
             }
 
-            Console.WriteLine("Please select an arrival flight:");
-            for (int i = 0; i < arrivals.Count; i++)
-                Console.WriteLine($"{i + 1}. Flight {arrivals[i].FlightCode} arriving at {arrivals[i].ScheduledUtc:HH:mm dd/MM/yyyy} from {arrivals[i].City} on plane {arrivals[i].PlaneId}.");
-            Console.WriteLine($"Please enter a choice between 1 and {arrivals.Count}:");
+            // Check if user already has a departure flight
+            var existingDeparture = myBookings.FirstOrDefault(b => b.Direction == FlightDirection.Departure);
 
             int idx;
-            while (!int.TryParse(Console.ReadLine(), out idx) || idx < 1 || idx > arrivals.Count)
+
+            while (true)
             {
-                Console.WriteLine("Invalid choice.");
+                Console.WriteLine("Please enter the arrival flight:");
+                for (int i = 0; i < arrivals.Count; i++)
+                {
+                    var airlineName = GetAirlineNameFromCode(arrivals[i].AirlineCode);
+                    Console.WriteLine($"{i + 1}. Flight {arrivals[i].FlightCode} operated by {airlineName} arriving at {arrivals[i].ScheduledUtc:HH:mm dd/MM/yyyy} from {arrivals[i].City} on plane {arrivals[i].PlaneId}.");
+                }
                 Console.WriteLine($"Please enter a choice between 1 and {arrivals.Count}:");
+
+                while (!int.TryParse(ReadLineOrExit(), out idx) || idx < 1 || idx > arrivals.Count)
+                {
+                    Console.WriteLine("#####");
+                    Console.WriteLine("# Error - Supplied value is out of range.");
+                    Console.WriteLine("# Please try again.");
+                    Console.WriteLine("#####");
+                    Console.WriteLine($"Please enter a choice between 1 and {arrivals.Count}:");
+                }
+                
+                var chosenArrival = arrivals[idx - 1];
+
+                // If there's a departure booked, enforce arrival < departure
+                if (existingDeparture != null && chosenArrival.ScheduledUtc >= existingDeparture.WhenUtc)
+                {
+                    Console.WriteLine("#####");
+                    Console.WriteLine("# Error - The arrival time must be before the departure time.");
+                    Console.WriteLine("# Please try again.");
+                    Console.WriteLine("#####");
+                    continue;
+                }
+
+                break; // valid flight selected
             }
 
-            // Prevent double arrival bookings for same user
-            var myBookings = BookingRepo.ListAsync().Result.Where(b => b.UserId == userId).ToList();
-            if (myBookings.Any(b => b.Direction == FlightDirection.Arrival))
+            var selectedFlight = arrivals[idx - 1];
+
+            // who is booking?
+            var currentUser = UserRepo.GetByIdAsync(userId).Result;
+            bool isFrequentFlyer = currentUser is FrequentFlyer;
+
+            bool validSeatChosen = false;
+            while (!validSeatChosen)
             {
-                Console.WriteLine("Error: You already have an arrival flight booked.");
-                Pause();
-                return;
+                // --- Prompt for seat row ---
+                Console.WriteLine("Please enter in your seat row between 1 and 10:");
+                int seatRow;
+                while (!int.TryParse(ReadLineOrExit(), out seatRow) || seatRow < 1 || seatRow > 10)
+                {
+                    Console.WriteLine("#####");
+                    Console.WriteLine("# Error - Supplied seat row is invalid.");
+                    Console.WriteLine("# Please try again.");
+                    Console.WriteLine("#####");
+                    Console.WriteLine("Please enter in your seat row between 1 and 10:");
+                }
+
+                // --- Prompt for seat column ---
+                Console.WriteLine("Please enter in your seat column between A and D:");
+                string seatCol;
+                while (true)
+                {
+                    seatCol = (ReadLineOrExit() ?? "").Trim().ToUpperInvariant();
+                    if (seatCol is "A" or "B" or "C" or "D") break;
+
+                    Console.WriteLine("#####");
+                    Console.WriteLine("# Error - Supplied seat column is invalid.");
+                    Console.WriteLine("# Please try again.");
+                    Console.WriteLine("#####");
+                    Console.WriteLine("Please enter in your seat column between A and D:");
+                }
+
+                var seatForRequest = $"{seatRow}{seatCol}";
+                var seatForDisplay = $"{seatRow}:{seatCol}";
+
+                // Re-fetch current bookings for the flight
+                var existingBookings = BookingRepo.ListAsync().Result
+                .Where(b => b.FlightId == selectedFlight.Id)
+                .ToList();
+
+                bool seatAlreadyTaken = existingBookings
+                    .Any(b => string.Equals(b.Seat, seatForRequest, StringComparison.OrdinalIgnoreCase));
+
+                if (seatAlreadyTaken && !isFrequentFlyer)
+                {
+                    Console.WriteLine("#####");
+                    Console.WriteLine("# Error - Seat is already occupied.");
+                    Console.WriteLine("# Please try again.");
+                    Console.WriteLine("#####");
+                    continue;
+                    // Loop repeats and asks for row/col again
+                }
+                else
+                {
+                    // Seat is free → proceed with booking & exit the loop
+                    validSeatChosen = true;
+
+                    var use = new BookArrivalFlightUseCase(UserRepo, FlightRepo, BookingRepo);
+                    var res = use.HandleAsync(
+                        new BookArrivalRequest(userId, selectedFlight.Id, seatForRequest)
+                    ).Result;
+
+                    if (res is null)
+                    {
+                        Console.WriteLine("Error: Could not complete booking (plane full or another rule).");
+                    }
+                    else
+                    {
+                        var (outRow, outCol) = SplitSeat(res.Seat);
+                        Console.WriteLine(
+                            $"Congratulations. You have booked flight {res.FlightCode} " +
+                            $"from {res.City} arriving at {res.WhenUtc:HH:mm dd/MM/yyyy} " +
+                            $"and are seated in {outRow}:{outCol}.");
+                    }
+
+                    Pause();
+                    break;
+                }
             }
-
-            // Prompt for seat
-            Console.WriteLine("Please enter in your seat (row 1-10 and column A-D, e.g., 6B):");
-            var seat = (Console.ReadLine() ?? "").Trim().ToUpperInvariant();
-
-            if (!Validation.IsValidSeat(seat))
-            {
-                Console.WriteLine("Error: Invalid seat format.");
-                Pause();
-                return;
-            }
-
-            // Attempt booking
-            var use = new BookArrivalFlightUseCase(UserRepo, FlightRepo, BookingRepo);
-            var res = use.HandleAsync(new BookArrivalRequest(userId, arrivals[idx - 1].Id, seat)).Result;
-
-            if (res is null)
-                Console.WriteLine("Error: Could not complete booking (seat taken, plane full, or other rule).");
-            else
-                Console.WriteLine($"Booked {res.FlightCode} arriving at {res.WhenUtc:HH:mm dd/MM/yyyy} from {res.City}. Seat: {res.Seat}.");
-
-            Pause();
         }
 
-        /// Book a DEPARTURE flight 
+
+        /// Book a DEPARTURE flight
         private static void BookDepartureFlightCli(Guid userId)
         {
             var lf = new ListFlightsUseCase(FlightRepo);
@@ -302,6 +446,18 @@ namespace Airport.Cli
                 .OrderBy(f => f.ScheduledUtc)
                 .ToList();
 
+            // Block booking a second departure for the same user
+            var myBookings = BookingRepo.ListAsync().Result.Where(b => b.UserId == userId).ToList();
+            if (myBookings.Any(b => b.Direction == FlightDirection.Departure))
+            {
+                Console.WriteLine("#####");
+                Console.WriteLine("# Error - You already have a departure flight. You can not book another.");
+                Console.WriteLine("#####");
+                Pause();
+                return;
+            }
+
+            // prevent booking if no flights
             if (departures.Count == 0)
             {
                 Console.WriteLine("No departure flights available.");
@@ -309,48 +465,130 @@ namespace Airport.Cli
                 return;
             }
 
-            Console.WriteLine("Please select a departure flight:");
-            for (int i = 0; i < departures.Count; i++)
-                Console.WriteLine($"{i + 1}. Flight {departures[i].FlightCode} departing at {departures[i].ScheduledUtc:HH:mm dd/MM/yyyy} to {departures[i].City} on plane {departures[i].PlaneId}.");
-            Console.WriteLine($"Please enter a choice between 1 and {departures.Count}:");
-
+            // PICK DEPARTURE (with time check against existing ARRIVAL)
             int idx;
-            while (!int.TryParse(Console.ReadLine(), out idx) || idx < 1 || idx > departures.Count)
+            while (true)
             {
-                Console.WriteLine("Invalid choice.");
+                Console.WriteLine("Please enter the departure flight:");
+                for (int i = 0; i < departures.Count; i++)
+                {
+                    var airlineName = GetAirlineNameFromCode(departures[i].AirlineCode);
+                    Console.WriteLine($"{i + 1}. Flight {departures[i].FlightCode} operated by {airlineName} " +
+                                    $"departing at {departures[i].ScheduledUtc:HH:mm dd/MM/yyyy} to {departures[i].City} on plane {departures[i].PlaneId}.");
+                }
                 Console.WriteLine($"Please enter a choice between 1 and {departures.Count}:");
+
+                while (!int.TryParse(ReadLineOrExit(), out idx) || idx < 1 || idx > departures.Count)
+                {
+                    Console.WriteLine("#####");
+                    Console.WriteLine("# Error - Supplied value is out of range.");
+                    Console.WriteLine("# Please try again.");
+                    Console.WriteLine("#####");
+                    Console.WriteLine($"Please enter a choice between 1 and {departures.Count}:");
+                }
+
+                // TIME ORDER CHECK: if an ARRIVAL exists, this DEPARTURE must be AFTER it
+                var chosenDeparture = departures[idx - 1];
+                var myArrival = myBookings.FirstOrDefault(b => b.Direction == FlightDirection.Arrival);
+                if (myArrival != null && chosenDeparture.ScheduledUtc <= myArrival.WhenUtc)
+                {
+                    Console.WriteLine("#####");
+                    Console.WriteLine("# Error - The departure time must be after the arrival time.");
+                    Console.WriteLine("# Please try again.");
+                    Console.WriteLine("#####");
+                    // re-loop to choose another departure
+                    continue;
+                }
+
+                // valid choice/time ordering OK
+                break;
             }
 
-            // Prevent double departure bookings for same user
-            var myBookings = BookingRepo.ListAsync().Result.Where(b => b.UserId == userId).ToList();
-            if (myBookings.Any(b => b.Direction == FlightDirection.Departure))
+            // we already validated idx and time ordering above
+            var selectedFlight = departures[idx - 1];
+
+            // who is booking?
+            var currentUser = UserRepo.GetByIdAsync(userId).Result;
+            bool isFrequentFlyer = currentUser is FrequentFlyer;
+
+            // find user type once (Traveller vs FrequentFlyer)
+            var userObj = UserRepo.GetByIdAsync(userId).Result;
+            bool isFrequent = userObj is FrequentFlyer;
+
+            // keep asking for a seat until we get a free one (or FF books and succeeds)
+            while (true)
             {
-                Console.WriteLine("Error: You already have a departure flight booked.");
+                // --- Prompt for seat row ---
+                Console.WriteLine("Please enter in your seat row between 1 and 10:");
+                int seatRow;
+                while (!int.TryParse(ReadLineOrExit(), out seatRow) || seatRow < 1 || seatRow > 10)
+                {
+                    Console.WriteLine("#####");
+                    Console.WriteLine("# Error - Supplied seat row is invalid.");
+                    Console.WriteLine("# Please try again.");
+                    Console.WriteLine("#####");
+                    Console.WriteLine("Please enter in your seat row between 1 and 10:");
+                }
+
+                // --- Prompt for seat column ---
+                Console.WriteLine("Please enter in your seat column between A and D:");
+                string seatCol;
+                while (true)
+                {
+                    seatCol = (ReadLineOrExit() ?? "").Trim().ToUpperInvariant();
+                    if (seatCol is "A" or "B" or "C" or "D") break;
+
+                    Console.WriteLine("#####");
+                    Console.WriteLine("# Error - Supplied seat column is invalid.");
+                    Console.WriteLine("# Please try again.");
+                    Console.WriteLine("#####");
+                    Console.WriteLine("Please enter in your seat column between A and D:");
+                }
+
+                // --- Seat strings ---
+                var seatForRequest = $"{seatRow}{seatCol}";   // send to use case (no colon)
+                var seatForDisplay = $"{seatRow}:{seatCol}";  // print only
+
+                // For standard Travellers, block if seat already taken (FFs are allowed; use case handles displacement)
+                if (!isFrequent)
+                {
+                    var existingBookings = BookingRepo.ListAsync().Result
+                        .Where(b => b.FlightId == selectedFlight.Id)
+                        .ToList();
+
+                    bool seatAlreadyTaken = existingBookings
+                        .Any(b => string.Equals(b.Seat, seatForRequest, StringComparison.OrdinalIgnoreCase));
+
+                    if (seatAlreadyTaken && !isFrequentFlyer)
+                    {
+                        Console.WriteLine("#####");
+                        Console.WriteLine("# Error - Seat is already occupied.");
+                        Console.WriteLine("# Please try again.");
+                        Console.WriteLine("#####");
+                        // loop continues and re-prompts row/col
+                        continue;
+                    }
+                }
+
+                // --- Attempt booking ---
+                var use = new BookDepartureFlightUseCase(UserRepo, FlightRepo, BookingRepo);
+                var res = use.HandleAsync(new BookDepartureRequest(userId, selectedFlight.Id, seatForRequest)).Result;
+
+                if (res is null)
+                {
+                    Console.WriteLine("Error: Could not complete booking (seat taken, plane full, or other rule).");
+                    Pause();
+                    return;
+                }
+
+                // success: show the actual seat assigned (may differ when FF displaced a traveller)
+                var (outRow, outCol) = SplitSeat(res.Seat);
+                Console.WriteLine(
+                    $"Congratulations. You have booked flight {res.FlightCode} to {res.City} " +
+                    $"departing at {res.WhenUtc:HH:mm dd/MM/yyyy} and are seated in {outRow}:{outCol}.");
                 Pause();
-                return;
+                break; // done
             }
-
-            // Prompt for seat
-            Console.WriteLine("Please enter in your seat (row 1-10 and column A-D, e.g., 6B):");
-            var seat = (Console.ReadLine() ?? "").Trim().ToUpperInvariant();
-
-            if (!Validation.IsValidSeat(seat))
-            {
-                Console.WriteLine("Error: Invalid seat format.");
-                Pause();
-                return;
-            }
-
-            // Attempt booking
-            var use = new BookDepartureFlightUseCase(UserRepo, FlightRepo, BookingRepo);
-            var res = use.HandleAsync(new BookDepartureRequest(userId, departures[idx - 1].Id, seat)).Result;
-
-            if (res is null)
-                Console.WriteLine("Error: Could not complete booking (seat taken, plane full, or other rule).");
-            else
-                Console.WriteLine($"Booked {res.FlightCode} departing at {res.WhenUtc:HH:mm dd/MM/yyyy} to {res.City}. Seat: {res.Seat}.");
-
-            Pause();
         }
 
 
@@ -362,26 +600,33 @@ namespace Airport.Cli
 
             if (tickets.Count == 0) { Console.WriteLine("You have no tickets."); Pause(); return; }
 
+            // Load user once to print header + frequent flag
+            var userObj = UserRepo.GetByIdAsync(userId).Result;
+            var isFrequent = userObj is FrequentFlyer;
+            var displayName = (userObj as User)?.Name ?? "User";
+
+            Console.WriteLine($"Showing flight details for {displayName}:");
             Console.WriteLine();
+
             foreach (var t in tickets)
             {
-                var userObj = UserRepo.GetByIdAsync(userId).Result;
-                var isFrequent = userObj is FrequentFlyer;
+                // seat as row:column (e.g., 8:B)
+                var (row, col) = SplitSeat(t.Seat);
 
                 if (t.Direction == FlightDirection.Arrival)
                 {
-                    Console.WriteLine($"Arrival ticket: Flight {t.FlightCode}, from {t.City}, arriving at {t.WhenUtc:HH:mm dd/MM/yyyy}, seat {t.Seat}.");
-                    if (isFrequent)
-                        Console.WriteLine($"Points earned: {t.PointsEarned}");
+                    Console.WriteLine(
+                        $"Arrival Flight: Flight {t.FlightCode} from {t.City} " +
+                        $"arriving at {t.WhenUtc:HH:mm dd/MM/yyyy} in seat {row}:{col}.");
                 }
                 else
                 {
-                    Console.WriteLine($"Departure ticket: Flight {t.FlightCode}, to {t.City}, departing at {t.WhenUtc:HH:mm dd/MM/yyyy}, seat {t.Seat}.");
-                    if (isFrequent)
-                        Console.WriteLine($"Points earned: {t.PointsEarned}");
+                    Console.WriteLine(
+                        $"Departure Flight: Flight {t.FlightCode} to {t.City} " +
+                        $"departing at {t.WhenUtc:HH:mm dd/MM/yyyy} in seat {row}:{col}.");
                 }
-
             }
+
             Pause();
         }
 
@@ -402,7 +647,7 @@ namespace Airport.Cli
                 Console.WriteLine("6. See frequent flyer points.");
                 Console.WriteLine("7. Logout.");
                 Console.WriteLine("Please enter a choice between 1 and 7:");
-                var choice = Console.ReadLine();
+                var choice = ReadLineOrExit();
 
                 switch (choice)
                 {
@@ -425,7 +670,6 @@ namespace Airport.Cli
                         ShowFrequentFlyerPointsCli(userId);
                         break;
                     case "7":
-                        Console.WriteLine("Logged out.");
                         inSession = false;
                         Pause();
                         break;
@@ -455,24 +699,42 @@ namespace Airport.Cli
             var myDeparture = myBookings.FirstOrDefault(b => b.Direction == FlightDirection.Departure);
 
             // Lookup points by city using the assignment table
-            int arrivalPts   = 0;
+            int arrivalPts = 0;
             int departurePts = 0;
+            bool hasArrival = false, hasDeparture = false;
 
             if (myArrival != null && AirportRules.CityPoints.TryGetValue(myArrival.City, out var ap))
+            {
                 arrivalPts = ap;
-
+                hasArrival = true;
+            }
+            
             if (myDeparture != null && AirportRules.CityPoints.TryGetValue(myDeparture.City, out var dp))
+            {
                 departurePts = dp;
+                hasDeparture = true;
+            }
 
             // Format numbers with thousands separators 
             string F(int n) => n.ToString("N0", System.Globalization.CultureInfo.InvariantCulture);
 
+            // Always show current points
             Console.WriteLine($"Your current points are: {F(ff.Points)}.");
-            Console.WriteLine($"Your points from your arrival flight will be : {F(arrivalPts)}.");
-            Console.WriteLine($"Your points from your departure flight will be: {F(departurePts)}.");
 
-            var newTotal = ff.Points + arrivalPts + departurePts;
-            Console.WriteLine($"After completing your flights your new points will be: {F(newTotal)}.");
+            // Only show these if applicable
+            if (hasArrival)
+                Console.WriteLine($"Your points from your arrival flight will be : {F(arrivalPts)}.");
+            if (hasDeparture)
+                Console.WriteLine($"Your points from your departure flight will be: {F(departurePts)}.");
+
+            // Only show new total if at least one flight exists
+            if (hasArrival || hasDeparture)
+            {
+                var newTotal = ff.Points + arrivalPts + departurePts;
+                var flightWord = (hasArrival && hasDeparture) ? "flights" : "flight";
+
+                Console.WriteLine($"After completing your {flightWord} your new points will be: {F(newTotal)}.");
+            }
 
             Pause();
         }
@@ -495,7 +757,7 @@ namespace Airport.Cli
                 Console.WriteLine("7. See the details of all flights.");
                 Console.WriteLine("8. Logout.");
                 Console.WriteLine("Please enter a choice between 1 and 8:");
-                var choice = Console.ReadLine();
+                var choice = ReadLineOrExit();
 
                 switch (choice)
                 {
@@ -526,7 +788,6 @@ namespace Airport.Cli
                         Pause();
                         break;
                     case "8":
-                        Console.WriteLine("Logged out.");
                         inSession = false;
                         Pause();
                         break;
@@ -561,10 +822,20 @@ namespace Airport.Cli
 
             // Date/time
             Console.WriteLine("Please enter in the arrival date and time in the format HH:mm dd/MM/yyyy:");
-            var dtText = Console.ReadLine() ?? "";
+            var dtText = ReadLineOrExit() ?? "";
             if (!TryParseExactLocal(dtText, out var when))
             {
                 Console.WriteLine("Error: Invalid date/time.");
+                return;
+            }
+
+            // Ensure flight isn't already assigned
+            if (PlaneAlreadyAssigned(planeId, out var assignedType))
+            {
+                var article = assignedType == "arrival" ? "an" : "a";
+                Console.WriteLine("#####");
+                Console.WriteLine($"# Error - Plane {planeId} has already been assigned to {article} {assignedType} flight.");
+                Console.WriteLine("#####");
                 return;
             }
 
@@ -587,7 +858,7 @@ namespace Airport.Cli
             var airlineCode = AirlinesMenu[airlineIdx].Code;
 
             // City
-            var cityIdx = PromptMenuChoice("Please enter the arriving city:", CitiesMenu) - 1;
+            var cityIdx = PromptMenuChoice("Please enter the arrival city:", CitiesMenu) - 1;
             var city = CitiesMenu[cityIdx];
 
             // Flight id number (100–900) -> FlightCode = ABC{num}
@@ -600,10 +871,20 @@ namespace Airport.Cli
 
             // Date/time
             Console.WriteLine("Please enter in the departure date and time in the format HH:mm dd/MM/yyyy:");
-            var dtText = Console.ReadLine() ?? "";
+            var dtText = ReadLineOrExit() ?? "";
             if (!TryParseExactLocal(dtText, out var when))
             {
                 Console.WriteLine("Error: Invalid date/time.");
+                return;
+            }
+
+            // Ensure flight isn't already assigned
+            if (PlaneAlreadyAssigned(planeId, out var assignedType))
+            {
+                var article = assignedType == "arrival" ? "an" : "a";
+                Console.WriteLine("#####");
+                Console.WriteLine($"# Error - Plane {planeId} has already been assigned to {article} {assignedType} flight.");
+                Console.WriteLine("#####");
                 return;
             }
 
@@ -627,7 +908,7 @@ namespace Airport.Cli
 
             if (flights.Count == 0)
             {
-                Console.WriteLine("There are no arrival flights to delay.");
+                Console.WriteLine("The airport does not have any arrival flights.");
                 return;
             }
 
@@ -637,7 +918,7 @@ namespace Airport.Cli
             Console.WriteLine($"Please enter a choice between 1 and {flights.Count}:");
 
             int index;
-            while (!int.TryParse(Console.ReadLine(), out index) || index < 1 || index > flights.Count)
+            while (!int.TryParse(ReadLineOrExit(), out index) || index < 1 || index > flights.Count)
             {
                 Console.WriteLine("Invalid choice.");
                 Console.WriteLine($"Please enter a choice between 1 and {flights.Count}:");
@@ -648,14 +929,14 @@ namespace Airport.Cli
             // Delay minutes
             Console.WriteLine("Please enter in your minutes delayed:");
             int minutes;
-            while (!int.TryParse(Console.ReadLine(), out minutes) || minutes <= 0)
+            while (!int.TryParse(ReadLineOrExit(), out minutes) || minutes <= 0)
             {
                 Console.WriteLine("Error: Invalid number.");
                 Console.WriteLine("Please enter in your minutes delayed:");
             }
 
             // Run use case
-            var delayUse = new DelayFlightUseCase(FlightRepo);
+            var delayUse = new DelayFlightUseCase(FlightRepo, BookingRepo);
             var res = delayUse.HandleAsync(
                 new DelayFlightRequest(chosen.FlightCode, TimeSpan.FromMinutes(minutes))
             ).Result;
@@ -665,17 +946,9 @@ namespace Airport.Cli
                 Console.WriteLine("Error: Flight not found or invalid input.");
                 return;
             }
-
-            Console.WriteLine($"Flight {res.UpdatedFlight.FlightCode} has been delayed by {minutes} minutes.");
-            Console.WriteLine($"New time: {res.UpdatedFlight.ScheduledUtc:HH:mm dd/MM/yyyy}.");
-
-            if (res.UpdatedPairedDeparture is not null)
-            {
-                Console.WriteLine($"The corresponding departure ({res.UpdatedPairedDeparture.FlightCode}) has also been delayed to {res.UpdatedPairedDeparture.ScheduledUtc:HH:mm dd/MM/yyyy}.");
-            }
 }
 
-        /// Delay DEPARTURE flight only (no auto-propagation)
+        /// Delay DEPARTURE flight only 
         private static void DelayDepartureFlightCli()
         {
             var listUse = new ListFlightsUseCase(FlightRepo);
@@ -686,7 +959,7 @@ namespace Airport.Cli
 
             if (flights.Count == 0)
             {
-                Console.WriteLine("There are no departure flights to delay.");
+                Console.WriteLine("The airport does not have any departure flights.");
                 return;
             }
 
@@ -696,7 +969,7 @@ namespace Airport.Cli
             Console.WriteLine($"Please enter a choice between 1 and {flights.Count}:");
 
             int index;
-            while (!int.TryParse(Console.ReadLine(), out index) || index < 1 || index > flights.Count)
+            while (!int.TryParse(ReadLineOrExit(), out index) || index < 1 || index > flights.Count)
             {
                 Console.WriteLine("Invalid choice.");
                 Console.WriteLine($"Please enter a choice between 1 and {flights.Count}:");
@@ -706,13 +979,13 @@ namespace Airport.Cli
 
             Console.WriteLine("Please enter in your minutes delayed:");
             int minutes;
-            while (!int.TryParse(Console.ReadLine(), out minutes) || minutes <= 0)
+            while (!int.TryParse(ReadLineOrExit(), out minutes) || minutes <= 0)
             {
                 Console.WriteLine("Error: Invalid number.");
                 Console.WriteLine("Please enter in your minutes delayed:");
             }
 
-            var delayUse = new DelayFlightUseCase(FlightRepo);
+            var delayUse = new DelayFlightUseCase(FlightRepo, BookingRepo);
             var res = delayUse.HandleAsync(
                 new DelayFlightRequest(chosen.FlightCode, TimeSpan.FromMinutes(minutes))
             ).Result;
@@ -723,8 +996,6 @@ namespace Airport.Cli
                 return;
             }
 
-            Console.WriteLine($"Flight {res.UpdatedFlight.FlightCode} has been delayed by {minutes} minutes.");
-            Console.WriteLine($"New time: {res.UpdatedFlight.ScheduledUtc:HH:mm dd/MM/yyyy}.");
         }
 
         /// List flights
@@ -755,7 +1026,7 @@ namespace Airport.Cli
             Console.WriteLine("Arrival Flights:");
             if (arrivals.Count == 0)
             {
-                Console.WriteLine("(none)");
+                Console.WriteLine("There are no arrival flights.");
             }
             else
             {
@@ -773,7 +1044,7 @@ namespace Airport.Cli
             Console.WriteLine("Departure Flights:");
             if (departures.Count == 0)
             {
-                Console.WriteLine("(none)");
+                Console.WriteLine("There are no departure flights.");
             }
             else
             {
@@ -798,8 +1069,8 @@ namespace Airport.Cli
             Console.WriteLine("1. A standard traveller.");
             Console.WriteLine("2. A frequent flyer.");
             Console.WriteLine("3. A flight manager.");
-            Console.WriteLine("Please enter a choice between 1 and 3: ");
-            var choice = Console.ReadLine();
+            Console.WriteLine("Please enter a choice between 1 and 3:");
+            var choice = ReadLineOrExit();
 
             Console.WriteLine();
             switch (choice)
@@ -825,117 +1096,251 @@ namespace Airport.Cli
         // ================== REGISTER TRAVELLER ==================
         private static void RegisterTraveller(RegisterUserUseCase useCase)
         {
-            var (name, age, mobile, email) = PromptCommonRegistrationFields();
-            var password = PromptPasswordWithRules();
+            string name = PromptValidName();
+            int age = PromptValidAge();
+            string mobile = PromptValidMobile();
+            string email = PromptValidEmail();
+            var password = PromptValidPasswordWithRules();
 
-            if (!ValidateCommon(name, age, mobile, email, password)) return;
+            var result = useCase.RegisterTraveller(
+                new RegisterTravellerRequest(name, age, email, mobile, password)
+            );
 
-            var result = useCase.RegisterTraveller(new RegisterTravellerRequest(name, age, email, mobile, password));
-            var firstName = ExtractFirstName(name);
-            Console.WriteLine(result is null
-                ? "Error: Email already exists."
-                : $"Congratulations {firstName}. You have registered as a traveller.");
+            Console.WriteLine($"Congratulations {name}. You have registered as a traveller.");
         }
 
         // ================== REGISTER FREQUENT FLYER ==================
         private static void RegisterFrequentFlyer(RegisterUserUseCase useCase)
         {
-            var (name, age, mobile, email) = PromptCommonRegistrationFields();
-            var password = PromptPasswordWithRules();
+            string name = PromptValidName();
+            int age = PromptValidAge();
+            string mobile = PromptValidMobile();
+            string email = PromptValidEmail();
+            var password = PromptValidPasswordWithRules();
 
-            Console.WriteLine("Please enter in your Frequent Flyer Number: ");
-            int.TryParse(Console.ReadLine(), out var ffNumber);
-
-            Console.WriteLine("Please enter in your Frequent Flyer Points: ");
-            int.TryParse(Console.ReadLine(), out var ffPoints);
-
-            if (!ValidateCommon(name, age, mobile, email, password)) return;
-            if (ffNumber < 100000 || ffNumber > 999999) { Console.WriteLine("Error: Invalid frequent flyer number."); return; }
-            if (ffPoints < 0 || ffPoints > 1_000_000) { Console.WriteLine("Error: Invalid frequent flyer points."); return; }
+            int ffNumber = PromptValidFrequentFlyerNumber();
+            int ffPoints = PromptValidFrequentFlyerPoints();
 
             var result = useCase.RegisterFrequentFlyer(
                 new RegisterFrequentFlyerRequest(name, age, email, mobile, password, ffNumber, ffPoints));
 
-            var firstName = ExtractFirstName(name);
-            Console.WriteLine(result is null
-                ? "Error: Email already exists."
-                : $"Congratulations {firstName}. You have registered as a frequent flyer.");
+            Console.WriteLine($"Congratulations {name}. You have registered as a frequent flyer.");
         }
 
         // ================== REGISTER FLIGHT MANAGER ==================
         private static void RegisterManager(RegisterUserUseCase useCase)
         {
-            var (name, age, mobile, email) = PromptCommonRegistrationFields();
-            var password = PromptPasswordWithRules();
-
-            Console.WriteLine("Please enter in your Staff ID between 1000 and 9000: ");
-            if (!int.TryParse(Console.ReadLine(), out var staffId) || staffId < 1000 || staffId > 9000)
-            {
-                Console.WriteLine("Error: Invalid staff ID.");
-                return;
-            }
-            if (!ValidateCommon(name, age, mobile, email, password)) return;
+            string name = PromptValidName();
+            int age = PromptValidAge();
+            string mobile = PromptValidMobile();
+            string email = PromptValidEmail();
+            var password = PromptValidPasswordWithRules();
+            int staffId = PromptValidStaffId();
 
             var result = useCase.RegisterManager(
                 new RegisterManagerRequest(name, age, email, mobile, password, staffId.ToString()));
 
-            var firstName = ExtractFirstName(name);
-            Console.WriteLine(result is null
-                ? "Error: Email already exists."
-                : $"Congratulations {firstName}. You have registered as a flight manager.");
-        }
-
-        // ================== COMMON REGISTRATION QUESTIONS ==================
-        private static (string name, int age, string mobile, string email) PromptCommonRegistrationFields()
-        {
-            Console.WriteLine("Please enter in your name: ");
-            var name = (Console.ReadLine() ?? "").Trim();
-
-            Console.WriteLine("Please enter in your age between 0 and 99: ");
-            int.TryParse(Console.ReadLine(), out var age);
-
-            Console.WriteLine("Please enter in your mobile number: ");
-            var mobile = (Console.ReadLine() ?? "").Trim();
-
-            Console.WriteLine("Please enter in your email: ");
-            var email = (Console.ReadLine() ?? "").Trim();
-
-            return (name, age, mobile, email);
-        }
-
-        // password rules
-        private static string PromptPasswordWithRules()
-        {
-            Console.WriteLine("Please enter in your password:");
-            Console.WriteLine("Your password must:");
-            Console.WriteLine("- be at least 8 characters long");
-            Console.WriteLine("- contain a number");
-            Console.WriteLine("- contain a lowercase letter");
-            Console.WriteLine("- contain an uppercase letter");
-
-            while (true)
-            {
-                var pw = Console.ReadLine() ?? string.Empty;
-                if (Validation.IsValidPassword(pw))
-                    return pw;
-
-                Console.WriteLine("Error: Invalid password.");
-                Console.WriteLine("Please enter in your password:");
-            }
-        }
-
-        // validation
-        private static bool ValidateCommon(string name, int age, string mobile, string email, string password)
-        {
-            if (!Validation.IsValidName(name)) { Console.WriteLine("Error: Invalid name."); return false; }
-            if (!Validation.IsValidAge(age)) { Console.WriteLine("Error: Invalid age."); return false; }
-            if (!Validation.IsValidMobile(mobile)) { Console.WriteLine("Error: Invalid mobile."); return false; }
-            if (!Validation.IsValidEmail(email)) { Console.WriteLine("Error: Invalid email."); return false; }
-            if (!Validation.IsValidPassword(password)) { Console.WriteLine("Error: Invalid password."); return false; }
-            return true;
+            Console.WriteLine($"Congratulations {name}. You have registered as a flight manager.");
         }
 
         // ================== Helpers ==================
+
+
+        /// COMMON REGISTRATION QUESTIONS 
+        // Prints the two-line error block exactly as in the reference outputs.
+        private static void PrintError(string message)
+        {
+            Console.WriteLine($"# Error - {message}");
+            Console.WriteLine("# Please try again.");
+        }
+
+        /// Prompt loops that re-ask until valid, emitting the error block on failure.
+        private static string PromptValidName()
+        {
+            while (true)
+            {
+                Console.WriteLine("Please enter in your name:");
+                var name = ReadLineOrExit();
+
+                if (Validation.IsValidName(name))
+                    return name;
+                
+                Console.WriteLine("#####");
+                PrintError("Supplied name is invalid.");
+                Console.WriteLine("#####");
+                // loop repeats and reprints the prompt
+            }
+        }
+
+        private static int PromptValidAge()
+        {
+            while (true)
+            {
+                Console.WriteLine("Please enter in your age between 0 and 99:");
+                var s = ReadLineOrExit();
+
+                // FIRST: check if it's a number at all
+                if (!int.TryParse(s, out var age))
+                {
+                    Console.WriteLine("#####");
+                    PrintError("Supplied value is invalid.");
+                    Console.WriteLine("#####");
+                    continue;
+                }
+
+                // THEN: check if it's a valid age range
+                if (Validation.IsValidAge(age))
+                {
+                    return age;
+                }
+
+                Console.WriteLine("#####");
+                PrintError("Supplied age is invalid.");
+                Console.WriteLine("#####");
+            }
+        }
+
+        private static string PromptValidMobile()
+        {
+            while (true)
+            {
+                Console.WriteLine("Please enter in your mobile number:");
+                var mobile = ReadLineOrExit();
+                if (Validation.IsValidMobile(mobile))
+                    return mobile;
+                Console.WriteLine("#####");
+                PrintError("Supplied mobile number is invalid.");
+                Console.WriteLine("#####");
+            }
+        }
+
+        private static string PromptValidEmail()
+        {
+            while (true)
+            {
+                Console.WriteLine("Please enter in your email:");
+                string email = (ReadLineOrExit() ?? "").Trim();
+
+                // Check if valid format
+                if (!Validation.IsValidEmail(email))
+                {
+                    Console.WriteLine("#####");
+                    Console.WriteLine("# Error - Supplied email is invalid.");
+                    Console.WriteLine("# Please try again.");
+                    Console.WriteLine("#####");
+                    continue;
+                }
+
+                // Check if already registered
+                if (UserRepo.ListAsync().Result.Any(u => u.Email.Equals(email, StringComparison.OrdinalIgnoreCase)))
+                {
+                    Console.WriteLine("#####");
+                    Console.WriteLine("# Error - Email already registered.");
+                    Console.WriteLine("# Please try again.");
+                    Console.WriteLine("#####");
+                    continue;
+                }
+
+                return email;
+            }
+        }
+
+        private static string PromptValidPasswordWithRules()
+        {
+            while (true)
+            {
+                Console.WriteLine("Please enter in your password:");
+                Console.WriteLine("Your password must:");
+                Console.WriteLine("-be at least 8 characters long ");
+                Console.WriteLine("-contain a number");
+                Console.WriteLine("-contain a lowercase letter");
+                Console.WriteLine("-contain an uppercase letter");
+
+                var pw = ReadLineOrExit() ?? string.Empty;
+
+                if (Validation.IsValidPassword(pw))
+                    return pw;
+
+                Console.WriteLine("#####");
+                Console.WriteLine("# Error - Supplied password is invalid.");
+                Console.WriteLine("# Please try again.");
+                Console.WriteLine("#####");
+            }
+        }
+
+
+        private static int PromptValidFrequentFlyerNumber()
+        {
+            while (true)
+            {
+                Console.WriteLine("Please enter in your frequent flyer number between 100000 and 999999:");
+                if (int.TryParse(ReadLineOrExit(), out int ffNumber) 
+                    && ffNumber >= 100000 && ffNumber <= 999999)
+                    return ffNumber;
+
+                Console.WriteLine("#####");
+                Console.WriteLine("# Error - Supplied frequent flyer number is invalid.");
+                Console.WriteLine("# Please try again.");
+                Console.WriteLine("#####");
+            }
+        }
+
+        private static int PromptValidFrequentFlyerPoints()
+        {
+            while (true)
+            {
+                Console.WriteLine("Please enter in your current frequent flyer points between 0 and 1000000:");
+                if (int.TryParse(ReadLineOrExit(), out int ffPoints)
+                    && ffPoints >= 0 && ffPoints <= 1000000)
+                    return ffPoints;
+
+                Console.WriteLine("#####");
+                Console.WriteLine("# Error - Supplied current frequent flyer points is invalid.");
+                Console.WriteLine("# Please try again.");
+                Console.WriteLine("#####");
+            }
+        }
+        
+        private static int PromptValidStaffId()
+        {
+            while (true)
+            {
+                Console.WriteLine("Please enter in your staff id between 1000 and 9000:");
+                var input = ReadLineOrExit();
+                if (int.TryParse(input, out int staffId) && staffId >= 1000 && staffId <= 9000)
+                    return staffId;
+
+                Console.WriteLine("#####");
+                Console.WriteLine("# Error - Supplied staff id is invalid.");
+                Console.WriteLine("# Please try again.");
+                Console.WriteLine("#####");
+            }
+        }
+
+
+        // Only clear when running interactively (prevents "The handle is invalid")
+        private static void SafeClear()
+        {
+            if (!Console.IsInputRedirected && !Console.IsOutputRedirected)
+                Console.Clear();
+        }
+
+        // Only pause interactively; never pause during redirected input
+        private static void Pause()
+        {
+            if (Console.IsInputRedirected) return;
+            Console.WriteLine("Press Enter to continue.");
+            Console.ReadLine();
+        }
+
+        // Read a line; if input is exhausted (EOF), exit gracefully for autograder
+        private static string ReadLineOrExit()
+        {
+            var line = Console.ReadLine();
+            if (line is null)
+                Environment.Exit(0); // stop re-prompt loops when tests end
+            return line;
+        }
 
         /// Maps menu choices (1–5) to airline names and their codes.
         /// Example: 1 = Jetstar (JST), 2 = Qantas (QFA), etc.
@@ -1049,19 +1454,48 @@ namespace Airport.Cli
             return $"Flight {f.FlightCode} operated by {airlineName} departing at {f.ScheduledUtc:HH:mm dd/MM/yyyy} to {f.City} on plane {f.PlaneId}.";
         }
 
+        // Returns true if planeId already used on any flight; out 'type' is "arrival" or "departure".
+        private static bool PlaneAlreadyAssigned(string planeId, out string type)
+        {
+            // Pull all flights 
+            var lf = new ListFlightsUseCase(FlightRepo);
+            var all = lf.HandleAsync().Result;
+
+            var existing = all.FirstOrDefault(f =>
+                f.PlaneId.Equals(planeId, StringComparison.OrdinalIgnoreCase));
+
+            if (existing != null)
+            {
+                type = existing.Direction == FlightDirection.Arrival ? "arrival" : "departure";
+                return true;
+            }
+
+            type = string.Empty;
+            return false;
+        }
+
+        // bumps a traveller to another seat
+        private static (string row, string col) SplitSeat(string seat)
+        {
+            // Accept "8B" or "8:B"
+            if (string.IsNullOrWhiteSpace(seat)) return ("?", "?");
+            seat = seat.Trim();
+            var colon = seat.IndexOf(':');
+            if (colon >= 0) return (seat.Substring(0, colon), seat[(colon + 1)..]);
+
+            // no colon -> last char is the column
+            return (seat[..^1], seat[^1..]);
+        }
+
+
         // pretty
         private static void PrintBanner()
         {
-            Console.WriteLine("===========================================");
-            Console.WriteLine("= Welcome to Brisbane Domestic Airport =");
-            Console.WriteLine("===========================================");
+            Console.WriteLine("==========================================");
+            Console.WriteLine("=  Welcome to Brisbane Domestic Airport  =");
+            Console.WriteLine("==========================================");
         }
 
-        private static void Pause()
-        {
-            Console.WriteLine();
-            Console.WriteLine("Press Enter to continue...");
-            Console.ReadLine();
-        }
+
     }
 }

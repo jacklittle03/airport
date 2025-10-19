@@ -9,7 +9,7 @@ public sealed class Booking
     public FlightDirection Direction { get; private set; } // Arrival or Departure
     public string Seat { get; private set; } = "";         // e.g., 6B
 
-    // For convenience when printing tickets (denormalized snapshot)
+    // For convenience when printing tickets 
     public string FlightCode { get; private set; } = "";
     public string City { get; private set; } = "";         // Arrival: departure city; Departure: arrival city
     public DateTime WhenUtc { get; private set; }
@@ -31,4 +31,9 @@ public sealed class Booking
 
 
     public void MoveSeat(string newSeat) => Seat = newSeat;
+
+    public void UpdateWhenUtc(DateTime newWhenUtc)
+    {
+        WhenUtc = newWhenUtc;
+    }
 }
